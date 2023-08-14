@@ -1,0 +1,4 @@
+db_instance_name = "mysql-hu"%0A 
+db_name = "smartbookmark"%0A 
+db_username = "smartbookmark-user"%0A 
+db_port = "3306"%0A 

@@ -1,0 +1,67 @@
+name: cloudrun-deploy
+
+on: 
+  push: 
+    branches: 
+      - main
+#       - new
+    
+env:
+    PROJECT_ID: us-gcp-ame-con-116-npd-1
+    SERVICE_NAME: smartbookmark-backend
+    REGION: us-west2
+
+jobs: 
+  Sonarqube:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Sonar scanner
+        env:
+          SQ_TOKEN: ${{ secrets.SQ_ADMIN_TOKEN }}
+          SQ_URL: https://sonarqube.hashedin.com
+          SCANNER_REPO: .
+        shell: bash
+        run: |
+          chmod +x ./.github/actions/sonar-scanner-runner.sh
+          bash ./.github/actions/sonar-scanner-runner.sh 
+  
+  build:
+    needs: Sonarqube 
+    name: Cloud Run Deploy
+    permissions:
+      contents: write
+      id-token: write
+    runs-on: ubuntu-latest 
+    steps: 
+      - name: Checkout 
+        uses: actions/checkout@master 
+
+      # Setup gcloud CLI 
+      - uses: google-github-actions/auth@v0
+        with:
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}  
+           
+
+      - name: Configure project id 
+        run: | 
+          gcloud config set project $PROJECT_ID
+
+      #Build and Push image 
+      - name: Build 
+        run: |
+          docker build -t gcr.io/$PROJECT_ID/$SERVICE_NAME .
+
+      # Configure docker to use the gcloud command-line tool as a credential helper 
+      - run: | 
+          gcloud auth configure-docker -q 
+
+      # Push image to Google Container Registry 
+      - name: Push 
+        run: |
+          docker push gcr.io/$PROJECT_ID/$SERVICE_NAME
+
+      - name: Deploy 
+        run: |     
+          gcloud run deploy $SERVICE_NAME --image gcr.io/$PROJECT_ID/$SERVICE_NAME --min-instances=1 --max-instances=2 --memory=512Mi --cpu=1 --platform managed --region $REGION --allow-unauthenticated --set-env-vars GCP_DB_PASSWORD=${{ secrets.GCP_DB_PASSWORD }} --set-env-vars GCP_DB_PRIVATE_IP=${{ secrets.GCP_DB_PRIVATE_IP }} --vpc-connector hu-conn --add-cloudsql-instances mysql-hu 
